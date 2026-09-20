@@ -48,6 +48,6 @@ public class Task {
     @Column(nullable = false)
     private StatusTarea status;
 
-    @Column(name = "device_id", nullable = false, length = 64)
+    @Column(name = "device_id", length = 64)
     private String deviceId;
 }
