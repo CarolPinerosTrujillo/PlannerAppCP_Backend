@@ -50,4 +50,7 @@ public class Task {
 
     @Column(name = "device_id", length = 64)
     private String deviceId;
+
+    @Column(name = "user_email", length = 255)
+    private String userEmail;
 }

@@ -23,10 +23,14 @@ public class TaskController {
     @Autowired
     private TaskRepository taskRepository;
 
-    @Operation(summary = "Listar tareas", description = "Obtiene tareas. Si se envía deviceId, filtra por ese dispositivo")
+    @Operation(summary = "Listar tareas", description = "Obtiene tareas filtradas por email del usuario")
     @GetMapping
     public List<Task> listarTodas(
+            @RequestParam(required = false) String userEmail,
             @RequestParam(required = false) String deviceId) {
+        if (userEmail != null && !userEmail.isEmpty()) {
+            return taskRepository.findByUserEmail(userEmail);
+        }
         if (deviceId != null && !deviceId.isEmpty()) {
             return taskRepository.findByDeviceId(deviceId);
         }

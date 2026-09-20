@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByDeviceId(String deviceId);
+    List<Task> findByUserEmail(String userEmail);
 }
