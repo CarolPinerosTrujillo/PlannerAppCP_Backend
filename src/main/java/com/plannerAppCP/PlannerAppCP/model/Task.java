@@ -47,4 +47,7 @@ public class Task {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private StatusTarea status;
+
+    @Column(name = "device_id", nullable = false, length = 64)
+    private String deviceId;
 }

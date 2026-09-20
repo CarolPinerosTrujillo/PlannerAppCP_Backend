@@ -74,6 +74,12 @@
 			<version>2.6.0</version>
 		</dependency>
 
+		<!-- Spring Mail para envío de emails -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
+
 	</dependencies>
 
 	<build>

@@ -23,41 +23,34 @@ public class TaskController {
     @Autowired
     private TaskRepository taskRepository;
 
-    // GET /api/tasks → Listar todas
-    @Operation(summary = "Listar todas las tareas", description = "Obtiene la lista completa de tareas registradas")
-    @ApiResponse(responseCode = "200", description = "Lista de tareas obtenida exitosamente")
+    @Operation(summary = "Listar tareas", description = "Obtiene tareas. Si se envía deviceId, filtra por ese dispositivo")
     @GetMapping
-    public List<Task> listarTodas() {
+    public List<Task> listarTodas(
+            @RequestParam(required = false) String deviceId) {
+        if (deviceId != null && !deviceId.isEmpty()) {
+            return taskRepository.findByDeviceId(deviceId);
+        }
         return taskRepository.findAll();
     }
 
-    // GET /api/tasks/{id} → Buscar por ID
-    @Operation(summary = "Buscar tarea por ID", description = "Obtiene una tarea específica a partir de su identificador")
-    @ApiResponse(responseCode = "200", description = "Tarea encontrada exitosamente")
-    @ApiResponse(responseCode = "404", description = "Tarea no encontrada")
+    @Operation(summary = "Buscar tarea por ID")
     @GetMapping("/{id}")
-    public Task buscarPorId(@Parameter(description = "ID de la tarea a buscar") @PathVariable Long id) {
+    public Task buscarPorId(@PathVariable Long id) {
         return taskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Tarea no encontrada con id: " + id));
     }
 
-    // POST /api/tasks → Crear
-    @Operation(summary = "Crear una nueva tarea", description = "Registra una nueva tarea. El estado se establece por defecto en PORHACER")
-    @ApiResponse(responseCode = "201", description = "Tarea creada exitosamente")
-    @ApiResponse(responseCode = "400", description = "Datos de entrada inválidos")
+    @Operation(summary = "Crear una nueva tarea")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Task crear(@RequestBody @Valid Task task) {
-        task.setStatus(StatusTarea.PORHACER);  // Default
+        task.setStatus(StatusTarea.PORHACER);
         return taskRepository.save(task);
     }
 
-    // PUT /api/tasks/{id} → Actualizar
-    @Operation(summary = "Actualizar una tarea", description = "Actualiza parcialmente una tarea existente. Solo se modifican los campos proporcionados")
-    @ApiResponse(responseCode = "200", description = "Tarea actualizada exitosamente")
-    @ApiResponse(responseCode = "404", description = "Tarea no encontrada")
+    @Operation(summary = "Actualizar una tarea")
     @PutMapping("/{id}")
-    public Task actualizar(@Parameter(description = "ID de la tarea a actualizar") @PathVariable Long id, @RequestBody Task task) {
+    public Task actualizar(@PathVariable Long id, @RequestBody Task task) {
         Task existente = taskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Tarea no encontrada con id: " + id));
 
@@ -72,13 +65,10 @@ public class TaskController {
         return taskRepository.save(existente);
     }
 
-    // DELETE /api/tasks/{id} → Eliminar
-    @Operation(summary = "Eliminar una tarea", description = "Elimina permanentemente una tarea por su ID")
-    @ApiResponse(responseCode = "204", description = "Tarea eliminada exitosamente")
-    @ApiResponse(responseCode = "404", description = "Tarea no encontrada")
+    @Operation(summary = "Eliminar una tarea")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void eliminar(@Parameter(description = "ID de la tarea a eliminar") @PathVariable Long id) {
+    public void eliminar(@PathVariable Long id) {
         taskRepository.deleteById(id);
     }
 }
