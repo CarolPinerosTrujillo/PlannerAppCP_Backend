@@ -3,16 +3,19 @@ package com.plannerAppCP.PlannerAppCP.controller;
 import com.plannerAppCP.PlannerAppCP.model.User;
 import com.plannerAppCP.PlannerAppCP.repository.UserRepository;
 import com.plannerAppCP.PlannerAppCP.service.EmailService;
+import com.plannerAppCP.PlannerAppCP.service.TokenService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -20,13 +23,22 @@ import java.util.Random;
 @Tag(name = "Auth", description = "Registro y recuperación de tareas por email")
 public class AuthController {
 
+    private static final SecureRandom random = new SecureRandom();
+    private static final int RATE_LIMIT_MAX = 3;
+    private static final long RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+    private final ConcurrentHashMap<String, ConcurrentLinkedDeque<Long>> sendAttempts = new ConcurrentHashMap<>();
+
     @Autowired
     private UserRepository userRepository;
 
     @Autowired
     private EmailService emailService;
 
-    @Operation(summary = "Registrar email con device_id")
+    @Autowired
+    private TokenService tokenService;
+
+    @Operation(summary = "Registrar email y enviar código de verificación")
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> body) {
         String email = body.get("email");
@@ -36,20 +48,38 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Email y deviceId son requeridos"));
         }
 
+        if (isRateLimited(email)) {
+            return ResponseEntity.status(429).body(Map.of("error", "Demasiados intentos. Intenta de nuevo en 15 minutos."));
+        }
+
         Optional<User> existing = userRepository.findByEmail(email);
         if (existing.isPresent()) {
             User user = existing.get();
-            user.setDeviceId(deviceId);
-            userRepository.save(user);
-            return ResponseEntity.ok(Map.of("message", "Email actualizado correctamente"));
+            if (!user.isVerified()) {
+                recordAttempt(email);
+                String code = generateCode();
+                user.setRecoverCode(code);
+                user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
+                userRepository.save(user);
+                emailService.sendRecoveryCode(email, code);
+            }
+            return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
         }
 
+        recordAttempt(email);
         User user = User.builder()
                 .email(email)
                 .deviceId(deviceId)
+                .verified(false)
                 .build();
+
+        String code = generateCode();
+        user.setRecoverCode(code);
+        user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
-        return ResponseEntity.ok(Map.of("message", "Email registrado correctamente"));
+        emailService.sendRecoveryCode(email, code);
+
+        return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
     }
 
     @Operation(summary = "Enviar código de recuperación al email")
@@ -61,22 +91,27 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Email es requerido"));
         }
 
+        if (isRateLimited(email)) {
+            return ResponseEntity.status(429).body(Map.of("error", "Demasiados intentos. Intenta de nuevo en 15 minutos."));
+        }
+
         Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email no registrado"));
+            return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
         }
 
         User user = userOpt.get();
-        String code = String.format("%06d", new Random().nextInt(999999));
+        recordAttempt(email);
+        String code = generateCode();
         user.setRecoverCode(code);
         user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
 
         emailService.sendRecoveryCode(email, code);
-        return ResponseEntity.ok(Map.of("message", "Código enviado a tu email"));
+        return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
     }
 
-    @Operation(summary = "Verificar código y obtener device_id")
+    @Operation(summary = "Verificar código y obtener token de acceso")
     @PostMapping("/verify-code")
     public ResponseEntity<?> verifyCode(@RequestBody Map<String, String> body) {
         String email = body.get("email");
@@ -88,17 +123,47 @@ public class AuthController {
 
         Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email no registrado"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Código incorrecto o expirado"));
         }
 
         User user = userOpt.get();
-        if (!code.equals(user.getRecoverCode())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Código incorrecto"));
-        }
-        if (user.getRecoverCodeExpires().isBefore(LocalDateTime.now())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Código expirado"));
+
+        if (user.getRecoverCode() == null || !code.equals(user.getRecoverCode())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Código incorrecto o expirado"));
         }
 
-        return ResponseEntity.ok(Map.of("deviceId", user.getDeviceId()));
+        if (user.getRecoverCodeExpires() == null || user.getRecoverCodeExpires().isBefore(LocalDateTime.now())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Código incorrecto o expirado"));
+        }
+
+        user.setRecoverCode(null);
+        user.setRecoverCodeExpires(null);
+        user.setVerified(true);
+        userRepository.save(user);
+
+        String token = tokenService.createToken(email);
+        return ResponseEntity.ok(Map.of(
+                "token", token,
+                "email", email,
+                "deviceId", user.getDeviceId() != null ? user.getDeviceId() : ""
+        ));
+    }
+
+    private String generateCode() {
+        return String.format("%06d", random.nextInt(1000000));
+    }
+
+    private boolean isRateLimited(String email) {
+        ConcurrentLinkedDeque<Long> attempts = sendAttempts.get(email);
+        if (attempts == null) return false;
+
+        long cutoff = System.currentTimeMillis() - RATE_LIMIT_WINDOW_MS;
+        attempts.removeIf(t -> t < cutoff);
+        return attempts.size() >= RATE_LIMIT_MAX;
+    }
+
+    private void recordAttempt(String email) {
+        sendAttempts.computeIfAbsent(email, k -> new ConcurrentLinkedDeque<>())
+                .add(System.currentTimeMillis());
     }
 }

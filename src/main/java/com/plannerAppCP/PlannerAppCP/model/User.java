@@ -32,6 +32,9 @@ public class User {
     @Column(name = "recover_code_expires")
     private LocalDateTime recoverCodeExpires;
 
+    @Column(name = "verified")
+    private boolean verified = false;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 }
