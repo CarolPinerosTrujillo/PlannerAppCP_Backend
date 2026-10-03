@@ -38,6 +38,16 @@ public class AuthController {
     @Autowired
     private TokenService tokenService;
 
+    private void safeSendEmail(String email, String code) {
+        new Thread(() -> {
+            try {
+                emailService.sendRecoveryCode(email, code);
+            } catch (Exception e) {
+                System.err.println("Error enviando email a " + email + ": " + e.getMessage());
+            }
+        }).start();
+    }
+
     @Operation(summary = "Registrar email y enviar código de verificación")
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> body) {
@@ -61,7 +71,7 @@ public class AuthController {
                 user.setRecoverCode(code);
                 user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
                 userRepository.save(user);
-                emailService.sendRecoveryCode(email, code);
+                safeSendEmail(email, code);
             }
             return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
         }
@@ -77,7 +87,7 @@ public class AuthController {
         user.setRecoverCode(code);
         user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
-        emailService.sendRecoveryCode(email, code);
+        safeSendEmail(email, code);
 
         return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
     }
@@ -107,7 +117,7 @@ public class AuthController {
         user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
 
-        emailService.sendRecoveryCode(email, code);
+        safeSendEmail(email, code);
         return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
     }
 
