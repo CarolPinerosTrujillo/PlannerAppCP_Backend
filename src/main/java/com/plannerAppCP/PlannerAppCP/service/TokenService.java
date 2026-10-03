@@ -47,11 +47,11 @@ public class TokenService {
             String expectedSig = hmac(payload);
             if (!constantTimeEquals(signature, expectedSig)) return null;
 
-            String[] payloadParts = payload.split("\\.");
-            if (payloadParts.length != 2) return null;
+            int lastDot = payload.lastIndexOf('.');
+            if (lastDot <= 0) return null;
 
-            String email = payloadParts[0];
-            long exp = Long.parseLong(payloadParts[1]);
+            String email = payload.substring(0, lastDot);
+            long exp = Long.parseLong(payload.substring(lastDot + 1));
 
             if (System.currentTimeMillis() > exp) return null;
 
