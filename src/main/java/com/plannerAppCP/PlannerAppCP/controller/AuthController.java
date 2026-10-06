@@ -7,6 +7,7 @@ import com.plannerAppCP.PlannerAppCP.service.TokenService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,6 +27,7 @@ public class AuthController {
     private static final SecureRandom random = new SecureRandom();
     private static final int RATE_LIMIT_MAX = 3;
     private static final long RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+    private static final String MSG_CODIGO = "Si el email es válido, recibirás un código de verificación";
 
     private final ConcurrentHashMap<String, ConcurrentLinkedDeque<Long>> sendAttempts = new ConcurrentHashMap<>();
 
@@ -38,14 +40,23 @@ public class AuthController {
     @Autowired
     private TokenService tokenService;
 
-    private void safeSendEmail(String email, String code) {
-        new Thread(() -> {
-            try {
-                emailService.sendRecoveryCode(email, code);
-            } catch (Exception e) {
-                System.err.println("Error enviando email a " + email + ": " + e.getMessage());
-            }
-        }).start();
+    @Value("${email.demo-mode:true}")
+    private boolean demoMode;
+
+    private boolean safeSendEmail(String email, String code) {
+        try {
+            return emailService.sendRecoveryCode(email, code);
+        } catch (Exception e) {
+            System.err.println("Error enviando email a " + email + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    private ResponseEntity<?> respuestaEnvio(boolean enviado, String codigo) {
+        if (!enviado && demoMode && codigo != null) {
+            return ResponseEntity.ok(Map.of("message", MSG_CODIGO, "demoCode", codigo));
+        }
+        return ResponseEntity.ok(Map.of("message", MSG_CODIGO));
     }
 
     @Operation(summary = "Registrar email y enviar código de verificación")
@@ -65,15 +76,12 @@ public class AuthController {
         Optional<User> existing = userRepository.findByEmail(email);
         if (existing.isPresent()) {
             User user = existing.get();
-            if (!user.isVerified()) {
-                recordAttempt(email);
-                String code = generateCode();
-                user.setRecoverCode(code);
-                user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
-                userRepository.save(user);
-                safeSendEmail(email, code);
-            }
-            return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
+            recordAttempt(email);
+            String code = generateCode();
+            user.setRecoverCode(code);
+            user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
+            userRepository.save(user);
+            return respuestaEnvio(safeSendEmail(email, code), code);
         }
 
         recordAttempt(email);
@@ -87,9 +95,8 @@ public class AuthController {
         user.setRecoverCode(code);
         user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
-        safeSendEmail(email, code);
 
-        return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
+        return respuestaEnvio(safeSendEmail(email, code), code);
     }
 
     @Operation(summary = "Enviar código de recuperación al email")
@@ -107,7 +114,7 @@ public class AuthController {
 
         Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
-            return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
+            return ResponseEntity.ok(Map.of("message", MSG_CODIGO));
         }
 
         User user = userOpt.get();
@@ -117,8 +124,7 @@ public class AuthController {
         user.setRecoverCodeExpires(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
 
-        safeSendEmail(email, code);
-        return ResponseEntity.ok(Map.of("message", "Si el email es válido, recibirás un código de verificación"));
+        return respuestaEnvio(safeSendEmail(email, code), code);
     }
 
     @Operation(summary = "Verificar código y obtener token de acceso")
