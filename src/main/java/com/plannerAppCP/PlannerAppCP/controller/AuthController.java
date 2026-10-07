@@ -52,6 +52,10 @@ public class AuthController {
         }
     }
 
+    private String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase();
+    }
+
     private ResponseEntity<?> respuestaEnvio(boolean enviado, String codigo) {
         if (!enviado && demoMode && codigo != null) {
             return ResponseEntity.ok(Map.of("message", MSG_CODIGO, "demoCode", codigo));
@@ -62,7 +66,7 @@ public class AuthController {
     @Operation(summary = "Registrar email y enviar código de verificación")
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> body) {
-        String email = body.get("email");
+        String email = normalizeEmail(body.get("email"));
         String deviceId = body.get("deviceId");
 
         if (email == null || email.isEmpty() || deviceId == null || deviceId.isEmpty()) {
@@ -102,7 +106,7 @@ public class AuthController {
     @Operation(summary = "Enviar código de recuperación al email")
     @PostMapping("/send-code")
     public ResponseEntity<?> sendCode(@RequestBody Map<String, String> body) {
-        String email = body.get("email");
+        String email = normalizeEmail(body.get("email"));
 
         if (email == null || email.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email es requerido"));
@@ -130,7 +134,7 @@ public class AuthController {
     @Operation(summary = "Verificar código y obtener token de acceso")
     @PostMapping("/verify-code")
     public ResponseEntity<?> verifyCode(@RequestBody Map<String, String> body) {
-        String email = body.get("email");
+        String email = normalizeEmail(body.get("email"));
         String code = body.get("code");
 
         if (email == null || code == null) {
